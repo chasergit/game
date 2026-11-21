@@ -69,7 +69,7 @@ function pathAStar(start,end,extraCost=()=>0){const s=nearestNode(start),g=neare
 function visible(a,b){const from=a.clone().add(new THREE.Vector3(0,1.35,0)),to=b.clone().add(new THREE.Vector3(0,1.2,0)),dir=to.clone().sub(from),len=dir.length();dir.normalize();const ray=new THREE.Raycaster(from,dir,0,len);const hits=ray.intersectObjects(obstacles.map(o=>o.mesh),false);return !hits.length;}
 const audioCtx=window.AudioContext?new AudioContext():null;
 const soundBuffers=Object.create(null);
-const soundUrls={shot:['./audio/rifle_fire_01.opus','./audio/rifle_fire_02.opus'],distant:'./audio/rifle_fire_far.opus',reload:'./audio/rifle_reload.opus',hit:'./audio/hit.wav'};
+const soundUrls={shot:['https://sfxmint.com/dl/impact-gunshot-26.mp3','https://sfxmint.com/dl/growth-65de718ff53302fbf797166e-retry.mp3'],distant:'https://sfxmint.com/dl/impact-gunshot-26.mp3',reload:'https://sfxmint.com/dl/gun-cocking-03.mp3',hit:'https://sfxmint.com/dl/impact-punch-67.mp3'};
 const soundPool={shot:[],distant:null,reload:null,hit:null};
 function loadSoundFiles(){soundPool.shot=soundUrls.shot.map(url=>{const a=new Audio(url);a.preload='auto';a.load();return a;});for(const key of ['distant','reload','hit']){soundPool[key]=new Audio(soundUrls[key]);soundPool[key].preload='auto';soundPool[key].load();}}
 function playWorldAudio(base,pos,baseVolume=.8){if(!base)return;const a=base.cloneNode();const d=pos?camera.position.distanceTo(pos):0;a.volume=THREE.MathUtils.clamp(baseVolume/(1+d*.095),.018,baseVolume);a.playbackRate=.96+Math.random()*.08;a.play().catch(()=>{});}
@@ -168,7 +168,7 @@ const spawnBot=(team,pos)=>makeActor(team,new THREE.Vector3(pos[0],0,pos[1]));
 player=makeActor(0,new THREE.Vector3(0,0,18),true);
 const firstPersonWeapon=buildFirstPersonWeapon();
 let weaponScene=null;
-function attachRifle(actor){if(actor.isPlayer||!firstPersonWeapon?.gun)return;const old=actor.root.getObjectByName('carried-rifle');if(old)actor.root.remove(old);const rifle=firstPersonWeapon.gun.clone(true);rifle.name='carried-rifle';rifle.position.set(0,1.04,-.34);rifle.rotation.set(0,0,0);rifle.scale.setScalar(.62);rifle.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=true;}});actor.root.add(rifle);}
+function attachRifle(actor){if(actor.isPlayer||!firstPersonWeapon?.gun)return;const old=actor.root.getObjectByName('carried-rifle');if(old)actor.root.remove(old);const rifle=firstPersonWeapon.gun.clone(true);rifle.name='carried-rifle';rifle.position.set(0,1.18,.27);rifle.rotation.set(0,Math.PI,0);rifle.scale.setScalar(.82);rifle.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=true;}});actor.root.add(rifle);}
 function loadWeaponModel(){
  // Внешняя GLB-модель отключена: игра использует встроенную модель автомата,
  // поэтому KTX2Loader и сетевой запрос не требуются.
