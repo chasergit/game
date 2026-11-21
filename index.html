@@ -69,9 +69,9 @@ function pathAStar(start,end,extraCost=()=>0){const s=nearestNode(start),g=neare
 function visible(a,b){const from=a.clone().add(new THREE.Vector3(0,1.35,0)),to=b.clone().add(new THREE.Vector3(0,1.2,0)),dir=to.clone().sub(from),len=dir.length();dir.normalize();const ray=new THREE.Raycaster(from,dir,0,len);const hits=ray.intersectObjects(obstacles.map(o=>o.mesh),false);return !hits.length;}
 const audioCtx=window.AudioContext?new AudioContext():null;
 const soundBuffers=Object.create(null);
-const soundUrls={shot:['./audio/rifle_556.mp3','./audio/rifle_762.mp3','./audio/smg_9mm.mp3'],distant:'./audio/suppressed.mp3',reload:'./audio/shotgun_12ga.mp3',hit:'./audio/pistol_9mm.mp3'};
+const soundUrls={shot:['./audio/rifle_556.mp3','./audio/rifle_762.mp3','./audio/smg_9mm.mp3'],distant:'./audio/suppressed.mp3',reload:null,hit:'./audio/pistol_9mm.mp3'};
 const soundPool={shot:[],distant:null,reload:null,hit:null};
-function loadSoundFiles(){soundPool.shot=soundUrls.shot.map(url=>{const a=new Audio(url);a.preload='auto';a.load();return a;});for(const key of ['distant','reload','hit']){soundPool[key]=new Audio(soundUrls[key]);soundPool[key].preload='auto';soundPool[key].load();}}
+function loadSoundFiles(){soundPool.shot=soundUrls.shot.map(url=>{const a=new Audio(url);a.preload='auto';a.load();return a;});for(const key of ['distant','reload','hit']){soundPool[key]=soundUrls[key]?new Audio(soundUrls[key]):null;if(soundPool[key]){soundPool[key].preload='auto';soundPool[key].load();}}}
 function playWorldAudio(base,pos,baseVolume=.8){if(!base)return;const a=base.cloneNode();const d=pos?camera.position.distanceTo(pos):0;a.volume=THREE.MathUtils.clamp(baseVolume/(1+d*.095),.018,baseVolume);a.playbackRate=.96+Math.random()*.08;a.play().catch(()=>{});}
 function playShot(pos){const d=pos?camera.position.distanceTo(pos):0;const list=d>25&&soundPool.distant?[soundPool.distant]:soundPool.shot;if(!list?.length)return;const base=list[Math.floor(Math.random()*list.length)];playWorldAudio(base,pos,d>25?.72:.9);}
 
@@ -143,8 +143,7 @@ function makeFallbackSoldier(team){
  // chest rig, pouches, radio and shoulder straps
  for(const x of [-.12,0,.12])mesh(new THREE.BoxGeometry(.075,.11,.045),dark,[x,1.12,-.145]);
  mesh(new THREE.BoxGeometry(.08,.16,.055),armor,[.23,1.2,-.03]);mesh(new THREE.BoxGeometry(.045,.24,.045),dark,[-.16,1.15,-.14]);
- // compact carried rifle silhouette
- mesh(new THREE.BoxGeometry(.075,.07,.46),dark,[.08,.98,-.42],[.12,0,-.16]);mesh(new THREE.CylinderGeometry(.012,.012,.3,8),visor,[.08,1.0,-.78],[Math.PI/2,0,0]);
+ // Rifle is attached once by attachRifle() after the soldier model is ready.
  return g;
 }
 function makeActor(team,pos,isPlayer=false){const root=new THREE.Group();root.position.copy(pos);scene.add(root);const tint=team===0?mats.blue:mats.red;let model=null,mixer=null,actions={},current='idle',dead=false,health=100,fireAt=0,reloadAt=0,ammo=30,heard=null,heardAt=0,target=null,state='roam',goal=null,path=[],pathIndex=0,thinkAt=0,strafeAt=0,strafe=1,flank=false,skill=.88+Math.random()*.24,lastSeen=null,spawn=pos.clone();const marker=new THREE.Mesh(new THREE.CircleGeometry(.55,24),new THREE.MeshBasicMaterial({color:team===0?0x54a8ff:0xff5d4d,transparent:true,opacity:.22,side:THREE.DoubleSide}));marker.rotation.x=-Math.PI/2;marker.position.y=.025;root.add(marker);
