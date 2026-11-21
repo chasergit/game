@@ -1,34 +1,123 @@
-<!DOCTYPE HTML>
-<html>
+<!doctype html>
+<html lang="ru">
 <head>
-<title></title>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Elite Warfare — Tactical Prototype</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090e13;color:#e9f0f5;font:14px/1.4 system-ui,Segoe UI,sans-serif}
+canvas{display:block;width:100%;height:100%}#hud{position:fixed;inset:0;pointer-events:none}
+#top{position:absolute;top:14px;left:14px;display:flex;gap:8px;align-items:center}
+.pill{background:#101b25dc;border:1px solid #52616d80;border-radius:8px;padding:8px 12px;backdrop-filter:blur(8px);font-weight:650}
+#health{color:#8be0a4}#ammo{color:#f3d58a}
+#help{position:absolute;left:14px;bottom:14px;max-width:340px;color:#c4d0d9;background:#101b25d9;border:1px solid #52616d80;border-radius:8px;padding:10px 12px}
+#state{position:absolute;right:14px;top:14px;text-align:right;color:#c4d0d9}
+#cross{position:absolute;left:50%;top:50%;width:18px;height:18px;transform:translate(-50%,-50%)}
+#cross:before,#cross:after{content:"";position:absolute;background:#fff;box-shadow:0 0 3px #000}
+#cross:before{width:2px;height:18px;left:8px}#cross:after{height:2px;width:18px;top:8px}
+#overlay{position:fixed;inset:0;display:grid;place-items:center;background:linear-gradient(#071019b8,#071019e8);z-index:5}
+.panel{width:min(560px,calc(100% - 32px));background:#101b25;border:1px solid #52616d;border-radius:14px;padding:24px;box-shadow:0 20px 80px #0009}
+h1{margin:0 0 8px;font-size:26px}p{color:#b9c6d0}.primary{border:0;border-radius:8px;background:#d8a84e;color:#15191d;font-weight:800;padding:12px 20px;font-size:15px;cursor:pointer}
+#notice{position:absolute;left:50%;top:18%;transform:translateX(-50%);background:#101b25dc;padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .2s}
+</style>
 </head>
 <body>
-<div id="project">
-<canvas id="canvas" style="display:block;"></canvas>
+<canvas id="canvas"></canvas>
+<div id="hud">
+ <div id="top"><div class="pill" id="health">HP 100</div><div class="pill" id="ammo">30 / 120</div><div class="pill" id="score">УБИЙСТВА 0</div></div>
+ <div id="state">ELITE WARFARE<br><span id="botstate">Боты: загрузка…</span></div>
+ <div id="cross"></div><div id="notice"></div>
+ <div id="help">WASD — движение · Shift — бег · C — присесть<br>ЛКМ — огонь · R — перезарядка · Мышь — обзор<br>Цель: устранить вражеский отряд</div>
 </div>
-
-
+<div id="overlay"><div class="panel">
+<h1>ELITE WARFARE</h1>
+<p>Тактический бой на Three.js. Противники патрулируют, слышат выстрелы, обнаруживают цели, ищут укрытия, обходят с фланга и передают контакты союзникам.</p>
+<p>Управление: WASD, Shift, C, мышь, ЛКМ, R. Для начала нажми кнопку и кликни по игровому полю.</p>
+<button class="primary" id="start">НАЧАТЬ БОЙ</button>
+</div></div>
 <script type="importmap">
-{
-"imports":{
-"three":"./js/0_three/three_185.js",
-"three/addons/":"./js/0_three/"
-}
-}
+{"imports":{"three":"./js/0_three/three_185.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/"}}
 </script>
-
-
 <script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {clone as cloneSkeleton} from 'three/addons/utils/SkeletonUtils.js';
 
-
-"use strict"
-
-
-import * as THREE from "three";
-
+const canvas=document.querySelector('#canvas');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x91a0a4);scene.fog=new THREE.Fog(0x91a0a4,35,95);
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,150);
+const hemi=new THREE.HemisphereLight(0xdce9f0,0x343b3c,2.1);scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xffe5bd,2.2);sun.position.set(-12,24,8);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-45;sun.shadow.camera.right=45;sun.shadow.camera.top=45;sun.shadow.camera.bottom=-45;scene.add(sun);
+const loader=new GLTFLoader(),clock=new THREE.Clock();
+const mats={floor:new THREE.MeshStandardMaterial({color:0x566267,roughness:.95}),wall:new THREE.MeshStandardMaterial({color:0x707c7d,roughness:.9}),crate:new THREE.MeshStandardMaterial({color:0x75644d,roughness:.9}),blue:new THREE.MeshStandardMaterial({color:0x416c9b,roughness:.75}),red:new THREE.MeshStandardMaterial({color:0x9b4d3f,roughness:.75}),metal:new THREE.MeshStandardMaterial({color:0x303b40,metalness:.65,roughness:.45})};
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(100,100),mats.floor);floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
+const obstacles=[],coverSpots=[];
+function box(x,y,z,sx,sy,sz,mat,cover=true){const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;scene.add(m);obstacles.push({x,z,hx:sx/2,hz:sz/2,hy:sy});if(cover)coverSpots.push(new THREE.Vector3(x+sx/2+.9,0,z),new THREE.Vector3(x-sx/2-.9,0,z),new THREE.Vector3(x,0,z+sz/2+.9),new THREE.Vector3(x,0,z-sz/2-.9));return m;}
+box(0,1,-25,52,2,1.5,mats.wall,false);box(0,1,25,52,2,1.5,mats.wall,false);box(-25,1,0,1.5,2,50,mats.wall,false);box(25,1,0,1.5,2,50,mats.wall,false);
+for(const [x,z,sx,sz] of [[-10,-9,5,2],[9,-9,5,2],[-10,9,5,2],[10,9,5,2],[-1,-16,3,3],[1,16,3,3],[-17,0,2,6],[17,0,2,6],[-4,2,3,2],[5,-2,3,2]])box(x,.85,z,sx,1.7,sz,mats.crate);
+for(let x=-20;x<=20;x+=5)for(let z=-20;z<=20;z+=5){if(Math.abs(x)<8&&Math.abs(z)<7)continue;const p=new THREE.Mesh(new THREE.CylinderGeometry(.12,.18,.35,8),mats.metal);p.position.set(x,.18,z);scene.add(p);}
+const gridSize=2,navNodes=[];
+for(let x=-22;x<=22;x+=gridSize)for(let z=-22;z<=22;z+=gridSize){if(!blocked(x,z,.45))navNodes.push(new THREE.Vector3(x,0,z));}
+function blocked(x,z,r=.4){return obstacles.some(o=>Math.abs(x-o.x)<o.hx+r&&Math.abs(z-o.z)<o.hz+r);}
+function nearestNode(p){let best=null,d=1e9;for(const n of navNodes){const q=n.distanceToSquared(p);if(q<d){d=q;best=n;}}return best;}
+function pathAStar(start,end,extraCost=()=>0){const s=nearestNode(start),g=nearestNode(end);if(!s||!g)return [end.clone()];const key=p=>p.x+','+p.z,open=[s],came=new Map(),gs=new Map([[key(s),0]]),fs=new Map([[key(s),s.distanceTo(g)]]),closed=new Set();while(open.length){open.sort((a,b)=>(fs.get(key(a))??1e9)-(fs.get(key(b))??1e9));const cur=open.shift(),ck=key(cur);if(cur===g||cur.distanceToSquared(g)<.01){const out=[g.clone()];let k=ck;while(came.has(k)){const prev=came.get(k);out.unshift(prev.clone());k=key(prev);}out.push(end.clone());return out;}closed.add(ck);for(const n of navNodes){if(cur.distanceToSquared(n)>4.01||cur===n)continue;const nk=key(n);if(closed.has(nk))continue;const tentative=(gs.get(ck)??1e9)+cur.distanceTo(n)+extraCost(n);if(tentative<(gs.get(nk)??1e9)){came.set(nk,cur);gs.set(nk,tentative);fs.set(nk,tentative+n.distanceTo(g));if(!open.includes(n))open.push(n);}}}return [end.clone()];}
+function visible(a,b){const from=a.clone().add(new THREE.Vector3(0,1.35,0)),to=b.clone().add(new THREE.Vector3(0,1.2,0)),dir=to.clone().sub(from),len=dir.length();dir.normalize();const ray=new THREE.Raycaster(from,dir,0,len);const hits=ray.intersectObjects(scene.children.filter(o=>o.isMesh&&o!==floor),false);return !hits.length;}
+const audioCtx=window.AudioContext?new AudioContext():null;
+const soundBuffers={};
+async function loadSoundFiles(){if(!audioCtx)return;for(const [name,url] of Object.entries({shot:'./audio/gunshot.wav',reload:'./audio/reload.wav',hit:'./audio/hit.wav'})){try{const response=await fetch(url);if(!response.ok)throw new Error(response.status);soundBuffers[name]=await audioCtx.decodeAudioData(await response.arrayBuffer());}catch(e){console.warn('SFX unavailable',url,e);}}}
+function playSfx(name,pos=null){const buffer=soundBuffers[name];if(!audioCtx||!buffer)return false;const src=audioCtx.createBufferSource(),gain=audioCtx.createGain();src.buffer=buffer;gain.gain.value=.85;src.connect(gain);if(pos){const p=audioCtx.createPanner();p.panningModel='HRTF';p.distanceModel='inverse';p.refDistance=2;p.maxDistance=42;p.positionX.value=pos.x;p.positionY.value=pos.y;p.positionZ.value=pos.z;gain.connect(p);p.connect(audioCtx.destination);}else gain.connect(audioCtx.destination);src.start();return true;}
+loadSoundFiles();
+function tone(freq,duration,type='sawtooth',volume=.08,at=null){if(!audioCtx)return;const now=audioCtx.currentTime,osc=audioCtx.createOscillator(),gain=audioCtx.createGain();osc.type=type;osc.frequency.setValueAtTime(freq,now);osc.frequency.exponentialRampToValueAtTime(Math.max(35,freq*.48),now+duration);gain.gain.setValueAtTime(volume,now);gain.gain.exponentialRampToValueAtTime(.001,now+duration);let node=gain;if(at){const p=audioCtx.createPanner();p.panningModel='HRTF';p.distanceModel='inverse';p.refDistance=2;p.maxDistance=40;p.positionX.value=at.x;p.positionY.value=at.y;p.positionZ.value=at.z;gain.connect(p);p.connect(audioCtx.destination);}else gain.connect(audioCtx.destination);osc.connect(gain);osc.start(now);osc.stop(now+duration);}
+function shotSound(pos){if(!playSfx('shot',pos)){tone(115,.12,'sawtooth',.12,pos);tone(48,.16,'triangle',.1,pos);}}
+function reloadSound(){if(!playSfx('reload')){tone(420,.07,'square',.035);setTimeout(()=>tone(280,.1,'square',.035),180);}}
+function hitSound(){if(!playSfx('hit'))tone(180,.09,'triangle',.045);}
+const audioListener=new THREE.AudioListener();camera.add(audioListener);
+let soldierScene=null,clips={},animCache=new Map();
+async function loadAnimations(){const names={
+ idle:'animations/stand/rifle_stand_idle_aiming.glb',walk:'animations/stand/rifle_stand_walk_aiming.glb',run:'animations/stand/rifle_stand_run_aiming.glb',fire:'animations/stand/rifle_stand_shot_aiming.glb',reload:'animations/stand/rifle_stand_reloading_aiming.glb',crouch:'animations/crouch/rifle_crouch_idle_aiming.glb',crouchWalk:'animations/crouch/rifle_crouch_walk_aiming.glb',hit:'animations/hit/rifle_stand_hit_aiming.glb',death:'animations/death/rifle_stand_death_front_to_body_aiming.glb',strafeL:'animations/crouch/rifle_crouch_strafe_left_aiming.glb',strafeR:'animations/crouch/rifle_crouch_strafe_right_aiming.glb'};
+ await Promise.all(Object.entries(names).map(async([k,url])=>{try{const gltf=await loader.loadAsync(url);if(gltf.animations[0])clips[k]=gltf.animations[0];animCache.set(k,gltf.scene);}catch(e){console.warn('Animation unavailable',url,e);}}));}
+function makeActor(team,pos,isPlayer=false){const root=new THREE.Group();root.position.copy(pos);scene.add(root);const tint=team===0?mats.blue:mats.red;let model=null,mixer=null,actions={},current='idle',dead=false,health=100,fireAt=0,reloadAt=0,ammo=30,heard=null,heardAt=0,target=null,state='roam',goal=null,path=[],pathIndex=0,thinkAt=0,strafeAt=0,strafe=1,flank=false,skill=.88+Math.random()*.24,lastSeen=null,spawn=pos.clone();const marker=new THREE.Mesh(new THREE.CircleGeometry(.55,24),new THREE.MeshBasicMaterial({color:team===0?0x54a8ff:0xff5d4d,transparent:true,opacity:.22,side:THREE.DoubleSide}));marker.rotation.x=-Math.PI/2;marker.position.y=.025;root.add(marker);
+ const actor={root,team,isPlayer,get health(){return health},get dead(){return dead},get state(){return state},set state(v){state=v},get ammo(){return ammo},set ammo(v){ammo=v},get fireAt(){return fireAt},set fireAt(v){fireAt=v},setTarget(t){target=t;},respawn(){dead=false;health=100;target=null;heard=null;state='roam';root.position.copy(spawn);actor.velocity.set(0,0,0);if(actions.idle)setAnim('idle');},takeDamage(d,attacker){if(dead)return;health-=d;hitSound();if(health<=0){dead=true;state='dead';setAnim('death');tone(80,.35,'triangle',.12,root.position);if(attacker?.isPlayer){kills++;document.querySelector('#score').textContent='УБИЙСТВА '+kills;}setTimeout(()=>respawn(actor),5500);}else{setAnim('hit');setTimeout(()=>{if(!dead)setAnim('idle');},380);if(attacker&&attacker.team!==team){heard=attacker.root.position.clone();heardAt=performance.now()/1000;}}},};
+ actors.push(actor);
+ function setAnim(name){if(!mixer||!actions[name]||current===name)return;const next=actions[name];next.reset().fadeIn(.18).play();if(actions[current]&&actions[current]!==next)actions[current].fadeOut(.18);current=name;}
+ actor.setAnim=setAnim;actor.modelReady=async()=>{if(!soldierScene)return;model=cloneSkeleton(soldierScene);root.add(model);model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;if(o.material){o.material=o.material.clone();o.material.color?.multiply(team===0?new THREE.Color(0x9bb9d8):new THREE.Color(0xd39a8c));}}});const b=new THREE.Box3().setFromObject(model),h=b.max.y-b.min.y;model.scale.setScalar(1.78/Math.max(.001,h));b.setFromObject(model);model.position.y=-b.min.y*model.scale.y;mixer=new THREE.AnimationMixer(model);for(const [k,c] of Object.entries(clips)){const tracks=c.tracks.filter(t=>{const name=t.name.split('.')[0].replace(/^.*\]/,'');return !!model.getObjectByName(name)||t.name.includes('.bones[');});if(!tracks.length)continue;const clip=new THREE.AnimationClip(k,c.duration,tracks);actions[k]=mixer.clipAction(clip);}if(actions.idle)setAnim('idle');};
+ actor.updateAnim=dt=>{if(mixer)mixer.update(dt);if(dead)return;const speed=actor.velocity?.length()||0;if(state==='reload')setAnim('reload');else if(actor.crouched)setAnim(speed>.25?'crouchWalk':'crouch');else if(speed>4.8)setAnim('run');else if(speed>.3)setAnim('walk');else setAnim('idle');};
+ actor.velocity=new THREE.Vector3();actor.crouched=false;
+ if(isPlayer){actor.move=(dt)=>{};}
+ return actor;}
+const actors=[];let player=null,kills=0,gameStarted=false;
+function respawn(a){if(a)a.respawn();}
+const spawnBot=(team,pos)=>makeActor(team,new THREE.Vector3(pos[0],0,pos[1]));
+player=makeActor(0,new THREE.Vector3(0,0,18),true);
+for(let i=0;i<4;i++)spawnBot(1,[[ -16,-15],[15,-15],[-15,14],[15,14]][i]);
+for(let i=0;i<3;i++)spawnBot(0,[[-16,15],[16,15],[0,-19]][i]);
+async function initModels(){try{const gltf=await loader.loadAsync('./soldier.glb');soldierScene=gltf.scene;await loadAnimations();for(const a of actors)await a.modelReady();}catch(e){console.error('Не удалось загрузить soldier.glb',e);notice('Ошибка загрузки soldier.glb');}}
+function notice(s){const el=document.querySelector('#notice');el.textContent=s;el.style.opacity=1;clearTimeout(notice.t);notice.t=setTimeout(()=>el.style.opacity=0,1600);}
+const keys={};let yaw=0,pitch=-.12,mouseLocked=false,shooting=false,lastShot=0,mag=30,reserve=120,reloading=false,playerHealth=100;
+function lock(){canvas.requestPointerLock?.();}
+document.querySelector('#start').onclick=()=>{document.querySelector('#overlay').style.display='none';gameStarted=true;lock();if(audioCtx?.state==='suspended')audioCtx.resume();};
+document.addEventListener('pointerlockchange',()=>mouseLocked=document.pointerLockElement===canvas);
+document.addEventListener('mousemove',e=>{if(!mouseLocked)return;yaw-=e.movementX*.0022;pitch=Math.max(-.55,Math.min(.35,pitch-e.movementY*.0018));});
+document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyR')reloadPlayer();if(e.code==='Escape')document.exitPointerLock?.();});
+document.addEventListener('keyup',e=>keys[e.code]=false);
+canvas.addEventListener('mousedown',e=>{if(e.button===0){if(!mouseLocked){lock();return;}shooting=true;}});document.addEventListener('mouseup',()=>shooting=false);
+function reloadPlayer(){if(reloading||mag===30||reserve<=0)return;reloading=true;reloadSound();setTimeout(()=>{const n=Math.min(30-mag,reserve);mag+=n;reserve-=n;reloading=false;},1450);}
+function moveActor(a,dir,dt,speed){if(dir.lengthSq()<.001){a.velocity.multiplyScalar(Math.exp(-dt*9));return;}dir.normalize();const desired=dir.multiplyScalar(speed);a.velocity.lerp(desired,1-Math.exp(-dt*8));const next=a.root.position.clone().addScaledVector(a.velocity,dt);if(!blocked(next.x,next.z,.48)){a.root.position.x=next.x;a.root.position.z=next.z;}else{const nx=a.root.position.x+a.velocity.x*dt,nz=a.root.position.z;if(!blocked(nx,nz,.48))a.root.position.x=nx;const zx=a.root.position.x,zz=a.root.position.z+a.velocity.z*dt;if(!blocked(zx,zz,.48))a.root.position.z=zz;}a.root.position.x=THREE.MathUtils.clamp(a.root.position.x,-23,23);a.root.position.z=THREE.MathUtils.clamp(a.root.position.z,-23,23);}
+function fire(shooter,aim,playerShot=false){const now=performance.now()/1000;if(now-shooter.fireAt<.14||shooter.ammo<=0)return;shooter.fireAt=now;if(playerShot){if(reloading||mag<=0){if(mag===0)reloadPlayer();return;}mag--;document.querySelector('#ammo').textContent=mag+' / '+reserve;}else shooter.ammo--;shotSound(shooter.root.position);const origin=shooter.root.position.clone().add(new THREE.Vector3(0,1.45,0)),dest=aim.clone().sub(origin).normalize();const ray=new THREE.Raycaster(origin,dest,0,65);let best=null,bestD=65;for(const a of actors){if(a===shooter||a.dead||a.team===shooter.team)continue;const center=a.root.position.clone().add(new THREE.Vector3(0,.9,0)),to=center.clone().sub(origin),along=to.dot(dest);if(along<0||along>bestD)continue;const closest=origin.clone().addScaledVector(dest,along);if(closest.distanceTo(center)<.72){const wall=ray.intersectObjects(scene.children.filter(o=>o.isMesh&&o!==floor&&!o.parent?.userData?.actor),false)[0];if(!wall||wall.distance>along){best=a;bestD=along;}}}if(best)best.takeDamage((playerShot?34:18+Math.random()*12)*(playerShot?1:shooter.skill),shooter);}
+function playerTick(dt){const forward=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw)),right=new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw)),dir=new THREE.Vector3();if(keys.KeyW)dir.add(forward);if(keys.KeyS)dir.sub(forward);if(keys.KeyD)dir.add(right);if(keys.KeyA)dir.sub(right);player.crouched=!!keys.KeyC;const speed=player.crouched?2.1:keys.ShiftLeft?6.2:4.4;moveActor(player,dir,dt,speed);player.root.rotation.y=yaw;const camTarget=player.root.position.clone().add(new THREE.Vector3(0,player.crouched?1.45:1.72,0));const behind=new THREE.Vector3(Math.sin(yaw)*5,2.15,Math.cos(yaw)*5);camera.position.lerp(camTarget.clone().add(behind),1-Math.exp(-dt*8));camera.lookAt(camTarget.clone().add(new THREE.Vector3(-Math.sin(yaw)*8,Math.tan(pitch)*8,-Math.cos(yaw)*8)));if(shooting)firePlayer();}
+function firePlayer(){const now=performance.now()/1000;if(now-lastShot<.14)return;lastShot=now;const dir=new THREE.Vector3();camera.getWorldDirection(dir);const ray=new THREE.Raycaster(camera.position,dir,0,70);const hits=ray.intersectObjects(scene.children.filter(o=>o!==player.root),true);let hit=hits[0];if(hit){const a=actors.find(x=>!x.dead&&x.team===1&&x.root.getObjectById(hit.object.id));if(a)a.takeDamage(40,player);else{const point=hit.point;const mark=new THREE.Mesh(new THREE.SphereGeometry(.07,6,6),new THREE.MeshBasicMaterial({color:0xffd28b}));mark.position.copy(point);scene.add(mark);setTimeout(()=>{scene.remove(mark);mark.geometry.dispose();},500);}}mag=Math.max(0,mag-1);document.querySelector('#ammo').textContent=mag+' / '+reserve;shotSound(player.root.position);if(mag===0)reloadPlayer();}
+function botTick(a,dt,now){if(a.dead||a.isPlayer)return;const pos=a.root.position,enemy=actors.filter(b=>!b.dead&&b.team!==a.team);let seen=null,nearest=1e9;for(const b of enemy){const d=pos.distanceTo(b.root.position);if(d<75&&d<nearest&&visible(pos,b.root.position)){const toward=b.root.position.clone().sub(pos).normalize(),facing=new THREE.Vector3(Math.sin(a.root.rotation.y),0,Math.cos(a.root.rotation.y));if(d<3||facing.dot(toward)>.42){seen=b;nearest=d;}}}if(seen){a.target=seen;a.lastSeen=seen.root.position.clone();a.heard=seen.root.position.clone();a.heardAt=now;if(a.state!=='engage')a.state='engage';}else if(a.target&&(!a.target.dead)&&now-a.heardAt<7){a.state='investigate';}else{a.target=null;if(a.state==='engage'||a.state==='investigate')a.state='roam';}
+ if(now-a.thinkAt>.1){a.thinkAt=now;if(a.state==='roam'){if(!a.goal||pos.distanceTo(a.goal)<2){const pool=navNodes.filter(n=>n.distanceTo(pos)>8&&Math.abs(n.x)<20&&Math.abs(n.z)<20);a.goal=pool[Math.floor(Math.random()*pool.length)]?.clone()||new THREE.Vector3(0,0,0);a.path=pathAStar(pos,a.goal);a.pathIndex=0;}}else if(a.state==='investigate'&&a.heard){a.goal=a.heard.clone();a.path=pathAStar(pos,a.goal);a.pathIndex=0;if(pos.distanceTo(a.goal)<2&&now-a.heardAt>3)a.state='roam';}}
+ let dir=new THREE.Vector3();if(a.state==='engage'&&a.target&&!a.target.dead){const e=a.target.root.position.clone(),to=e.clone().sub(pos),d=to.length();to.y=0;to.normalize();if(now-a.strafeAt>.7+Math.random()*.7){a.strafeAt=now;a.strafe=Math.random()<.5?-1:1;}const side=new THREE.Vector3(-to.z,0,to.x).multiplyScalar(a.strafe);if(d>13)dir.copy(to).multiplyScalar(.72).add(side.multiplyScalar(.45));else if(d<5)dir.copy(to).multiplyScalar(-.65).add(side);else dir.copy(side).multiplyScalar(.8);if(d<48&&visible(pos,e)&&now-a.fireAt>.35){fire(a,e);if(Math.random()<.09){const flankPoint=e.clone().add(new THREE.Vector3((Math.random()<.5?-1:1)*7,0,(Math.random()<.5?-1:1)*7));a.goal=flankPoint;a.path=pathAStar(pos,flankPoint,n=>Math.max(0,6-distanceToSegment(n,pos,e))*5);a.pathIndex=0;}}if(a.health<38&&Math.random()<.012){const c=coverSpots.filter(p=>p.distanceTo(pos)<12).sort((p,q)=>q.distanceTo(e)-p.distanceTo(e))[0];if(c){a.state='cover';a.goal=c.clone();a.path=pathAStar(pos,a.goal);a.pathIndex=0;}}a.root.rotation.y=Math.atan2(to.x,to.z);}else if(a.state==='cover'||a.state==='roam'||a.state==='investigate'){if(a.path?.length){while(a.pathIndex<a.path.length-1&&pos.distanceTo(a.path[a.pathIndex])<1.2)a.pathIndex++;const wp=a.path[a.pathIndex];dir.copy(wp).sub(pos);dir.y=0;if(a.state==='cover'&&pos.distanceTo(a.goal)<1.2){a.state='hold';a.path=[];}if(a.state==='investigate'&&pos.distanceTo(a.goal)<1.8&&now-a.heardAt>2){a.state='roam';a.path=[];}}if(dir.lengthSq()>.01)a.root.rotation.y=Math.atan2(dir.x,dir.z);}
+ for(const other of actors){if(other===a||other.dead)continue;const delta=pos.clone().sub(other.root.position);delta.y=0;const d=delta.length();if(d>0&&d<1.5)dir.add(delta.normalize().multiplyScalar((1.5-d)*.9));}
+ moveActor(a,dir,dt,a.state==='engage'?2.6:a.state==='cover'?4.4:3.7);a.updateAnim(dt);}
+function distanceToSegment(p,a,b){const ab=b.clone().sub(a),t=THREE.MathUtils.clamp(p.clone().sub(a).dot(ab)/Math.max(.001,ab.lengthSq()),0,1);return p.distanceTo(a.clone().addScaledVector(ab,t));}
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.05),now=performance.now()/1000;if(gameStarted){playerTick(dt);for(const a of actors){if(!a.isPlayer)botTick(a,dt,now);else a.updateAnim(dt);}document.querySelector('#health').textContent='HP '+Math.max(0,Math.round(player.health));document.querySelector('#botstate').textContent='Боты: '+actors.filter(a=>a.team===1&&!a.dead).length+' противников';}renderer.render(scene,camera);}
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+initModels();animate();
 </script>
-</body>
-</html>
+</body></html>
