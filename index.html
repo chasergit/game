@@ -101,6 +101,7 @@ const loader=new GLTFLoader(),clock=new THREE.Clock();
  });
  const shotSparkBatch=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),shotSparkMaterial,MAX_SHOT_SPARKS);
  shotSparkBatch.name='InstancedShotSparks.SingleDrawCall';shotSparkBatch.count=0;
+ shotSparkBatch.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(MAX_SHOT_SPARKS*3),3);
  shotSparkBatch.frustumCulled=false;shotSparkBatch.renderOrder=12;scene.add(shotSparkBatch);
  const shotSparks=[];
  const shotSparkDummy=new THREE.Object3D();
@@ -510,7 +511,7 @@ async function initializeGameAssets(){
 function spawnShotEffect(origin,direction,isPlayerShot){
  const forward=direction.clone().normalize(),muzzle=origin.clone().addScaledVector(forward,.12);
  // The large textured core and all flying fragments share one InstancedMesh.
- addShotSpark(muzzle,forward.clone().multiplyScalar(.12),.075,isPlayerShot?.64:.48,isPlayerShot?.34:.26,new THREE.Color(1,.82,.48),Math.random()*Math.PI,0);
+ addShotSpark(muzzle,forward.clone().multiplyScalar(.12),.075,isPlayerShot ? .64 : .48,isPlayerShot ? .34 : .26,new THREE.Color(1,.82,.48),Math.random()*Math.PI,0);
  const sparkCount=isPlayerShot?9:7;
  for(let i=0;i<sparkCount;i++){
   const spread=new THREE.Vector3((Math.random()-.5)*2.8,(Math.random()-.5)*2.8,(Math.random()-.5)*2.8);
