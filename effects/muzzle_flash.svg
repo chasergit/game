@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+ <defs>
+  <radialGradient id="core">
+   <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
+   <stop offset=".12" stop-color="#fff8d2" stop-opacity="1"/>
+   <stop offset=".3" stop-color="#ffd36b" stop-opacity=".98"/>
+   <stop offset=".58" stop-color="#ff7a1c" stop-opacity=".72"/>
+   <stop offset="1" stop-color="#ff3b08" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="flare" x1="0" y1="0" x2="1" y2="0">
+   <stop offset="0" stop-color="#ff5a0a" stop-opacity="0"/>
+   <stop offset=".34" stop-color="#ff9a24" stop-opacity=".55"/>
+   <stop offset=".48" stop-color="#fff5c4" stop-opacity="1"/>
+   <stop offset=".52" stop-color="#ffffff" stop-opacity="1"/>
+   <stop offset=".68" stop-color="#ff9b24" stop-opacity=".58"/>
+   <stop offset="1" stop-color="#ff4a08" stop-opacity="0"/>
+  </linearGradient>
+  <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+   <feGaussianBlur stdDeviation="7"/>
+  </filter>
+ </defs>
+ <g>
+  <path d="M12 128 L88 116 L110 94 L120 111 L128 24 L139 111 L155 92 L160 115 L244 128 L160 141 L147 163 L137 145 L128 232 L117 145 L101 164 L94 140 Z" fill="#ff8b19" opacity=".85" filter="url(#glow)"/>
+  <path d="M0 128 L91 123 L112 112 L124 119 L128 72 L133 119 L147 112 L164 123 L256 128 L164 133 L147 144 L133 137 L128 184 L124 137 L112 144 L91 133 Z" fill="url(#flare)"/>
+  <ellipse cx="128" cy="128" rx="78" ry="72" fill="url(#core)"/>
+  <path d="M91 128 L116 118 L125 91 L134 118 L163 128 L134 138 L125 165 L116 138 Z" fill="#fff7d5" opacity=".96"/>
+  <circle cx="128" cy="128" r="17" fill="#ffffff"/>
+ </g>
+</svg>
