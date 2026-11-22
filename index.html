@@ -62,18 +62,132 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
 renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 renderer.outputColorSpace=THREE.SRGBColorSpace;
-const scene=new THREE.Scene();scene.background=new THREE.Color(0x91a0a4);scene.fog=new THREE.Fog(0x91a0a4,35,95);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0xcbb48e);scene.fog=new THREE.Fog(0xcbb48e,48,105);
 const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,150);scene.add(camera);
-const hemi=new THREE.HemisphereLight(0xdce9f0,0x343b3c,2.1);scene.add(hemi);
-const sun=new THREE.DirectionalLight(0xffe5bd,2.2);sun.position.set(-12,24,8);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-45;sun.shadow.camera.right=45;sun.shadow.camera.top=45;sun.shadow.camera.bottom=-45;scene.add(sun);
+const hemi=new THREE.HemisphereLight(0xffedcf,0x766047,2.25);scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xffe3b1,2.55);sun.position.set(-16,28,-10);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-45;sun.shadow.camera.right=45;sun.shadow.camera.top=45;sun.shadow.camera.bottom=-45;scene.add(sun);
 const loader=new GLTFLoader(),clock=new THREE.Clock();
-const mats={floor:new THREE.MeshStandardMaterial({color:0x566267,roughness:.95}),wall:new THREE.MeshStandardMaterial({color:0x707c7d,roughness:.9}),crate:new THREE.MeshStandardMaterial({color:0x75644d,roughness:.9}),blue:new THREE.MeshStandardMaterial({color:0x416c9b,roughness:.75}),red:new THREE.MeshStandardMaterial({color:0x9b4d3f,roughness:.75}),metal:new THREE.MeshStandardMaterial({color:0x303b40,metalness:.65,roughness:.45})};
-const floor=new THREE.Mesh(new THREE.PlaneGeometry(100,100),mats.floor);floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
+function makeSurfaceTexture(base,accent,seed=1,repeat=8){
+ const canvas=document.createElement('canvas');canvas.width=256;canvas.height=256;
+ const ctx=canvas.getContext('2d');ctx.fillStyle=base;ctx.fillRect(0,0,256,256);
+ let state=seed>>>0;const rand=()=>{state=(state*1664525+1013904223)>>>0;return state/4294967296;};
+ for(let i=0;i<9000;i++){const a=.035+rand()*.12;ctx.fillStyle=accent.replace('ALPHA',a.toFixed(3));const size=.5+rand()*2.2;ctx.fillRect(rand()*256,rand()*256,size,size);}
+ const texture=new THREE.CanvasTexture(canvas);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(repeat,repeat);texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());return texture;
+}
+const sandTexture=makeSurfaceTexture('#c7a675','rgba(91,62,31,ALPHA)',12,10);
+const plasterTexture=makeSurfaceTexture('#c8ad81','rgba(82,57,34,ALPHA)',37,5);
+const stoneTexture=makeSurfaceTexture('#8d806a','rgba(31,28,23,ALPHA)',91,5);
+const mats={
+ floor:new THREE.MeshStandardMaterial({map:sandTexture,color:0xffffff,roughness:1}),
+ wall:new THREE.MeshStandardMaterial({map:plasterTexture,color:0xffffff,roughness:.96}),
+ cliff:new THREE.MeshStandardMaterial({map:stoneTexture,color:0xd2c09d,roughness:1}),
+ trim:new THREE.MeshStandardMaterial({color:0x9a805e,roughness:.9}),
+ dark:new THREE.MeshStandardMaterial({color:0x423a30,roughness:.98}),
+ crate:new THREE.MeshStandardMaterial({color:0x80613d,roughness:.94}),
+ crateLight:new THREE.MeshStandardMaterial({color:0xa17a4b,roughness:.9}),
+ blue:new THREE.MeshStandardMaterial({color:0x416c9b,roughness:.75}),
+ red:new THREE.MeshStandardMaterial({color:0x9b4d3f,roughness:.75}),
+ metal:new THREE.MeshStandardMaterial({color:0x3d4140,metalness:.55,roughness:.5}),
+ barrel:new THREE.MeshStandardMaterial({color:0x55594b,metalness:.35,roughness:.72})
+};
 const obstacles=[],coverSpots=[];
-function box(x,y,z,sx,sy,sz,mat,cover=true){const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;scene.add(m);obstacles.push({x,z,hx:sx/2,hz:sz/2,hy:sy,mesh:m});if(cover)coverSpots.push(new THREE.Vector3(x+sx/2+.9,0,z),new THREE.Vector3(x-sx/2-.9,0,z),new THREE.Vector3(x,0,z+sz/2+.9),new THREE.Vector3(x,0,z-sz/2-.9));return m;}
-box(0,1,-25,52,2,1.5,mats.wall,false);box(0,1,25,52,2,1.5,mats.wall,false);box(-25,1,0,1.5,2,50,mats.wall,false);box(25,1,0,1.5,2,50,mats.wall,false);
-for(const [x,z,sx,sz] of [[-10,-9,5,2],[9,-9,5,2],[-10,9,5,2],[10,9,5,2],[-1,-16,3,3],[1,16,3,3],[-17,0,2,6],[17,0,2,6],[-4,2,3,2],[5,-2,3,2]])box(x,.85,z,sx,1.7,sz,mats.crate);
-for(let x=-20;x<=20;x+=5)for(let z=-20;z<=20;z+=5){if(Math.abs(x)<8&&Math.abs(z)<7)continue;const p=new THREE.Mesh(new THREE.CylinderGeometry(.12,.18,.35,8),mats.metal);p.position.set(x,.18,z);scene.add(p);}
+function box(x,y,z,sx,sy,sz,mat,cover=true){
+ const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;scene.add(m);
+ obstacles.push({x,z,hx:sx/2,hz:sz/2,hy:sy,mesh:m});
+ if(cover)coverSpots.push(new THREE.Vector3(x+sx/2+.9,0,z),new THREE.Vector3(x-sx/2-.9,0,z),new THREE.Vector3(x,0,z+sz/2+.9),new THREE.Vector3(x,0,z-sz/2-.9));
+ return m;
+}
+function visualBox(x,y,z,sx,sy,sz,mat){
+ const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;scene.add(m);return m;
+}
+function crate(x,z,size=1.45){
+ const h=size*.88;box(x,h/2,z,size,h,size,mats.crate,true);
+ for(let i=-1;i<=1;i++)visualBox(x+i*size*.28,h*.56,z+size*.505,size*.09,h*.88,.035,mats.crateLight);
+ visualBox(x,h+.025,z,size*.92,.05,size*.92,mats.trim);
+}
+function barrel(x,z){
+ const radius=.43,height=1.05;
+ const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius*.92,radius,height,14),mats.barrel);
+ mesh.position.set(x,height/2,z);mesh.castShadow=true;mesh.receiveShadow=true;scene.add(mesh);
+ obstacles.push({x,z,hx:radius,hz:radius,hy:height,mesh});coverSpots.push(new THREE.Vector3(x+1,0,z),new THREE.Vector3(x-1,0,z));
+ const rim=new THREE.Mesh(new THREE.TorusGeometry(radius*.88,.035,6,18),mats.metal);rim.rotation.x=Math.PI/2;rim.position.set(x,height-.06,z);scene.add(rim);
+}
+function makeSiteMarker(letter,x,z,color){
+ const ring=new THREE.Mesh(new THREE.TorusGeometry(3.1,.075,8,56),new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:.17,roughness:.8}));
+ ring.rotation.x=Math.PI/2;ring.position.set(x,.07,z);scene.add(ring);
+ const canvas=document.createElement('canvas');canvas.width=128;canvas.height=128;
+ const ctx=canvas.getContext('2d');ctx.fillStyle='#473725';ctx.fillRect(8,8,112,112);ctx.strokeStyle='#e0c28d';ctx.lineWidth=8;ctx.strokeRect(12,12,104,104);
+ ctx.fillStyle='#f4dfb7';ctx.font='bold 86px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(letter,64,67);
+ const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
+ const sign=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:true}));
+ sign.position.set(x,4.4,z);sign.scale.set(1.9,1.9,1);scene.add(sign);
+}
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(50,50),mats.floor);floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
+
+// Outer desert rock boundary
+box(0,3,-24.5,50,6,1.5,mats.cliff,false);
+box(0,3,24.5,50,6,1.5,mats.cliff,false);
+box(-24.5,3,0,1.5,6,50,mats.cliff,false);
+box(24.5,3,0,1.5,6,50,mats.cliff,false);
+
+// Central Mid lane and the offset Mid Doors opening
+box(-5.5,2.5,-10,1.2,5,14,mats.wall,false);
+box(5.5,2.5,-10,1.2,5,14,mats.wall,false);
+box(-3.5,2.3,2,2.5,4.6,1,mats.wall,false);
+box(3.5,2.3,2,2.5,4.6,1,mats.wall,false);
+visualBox(0,5,-10,12.5,.35,14,mats.trim);
+visualBox(-5.5,5.1,-10,1.55,.22,14.4,mats.trim);
+visualBox(5.5,5.1,-10,1.55,.22,14.4,mats.trim);
+
+// Long A (east) and B Tunnels (west), both linked to their bombsites
+box(10.5,2.5,-7,1,5,20,mats.wall,false);
+box(19.5,2.5,-7,1,5,20,mats.wall,false);
+box(-10.5,2.5,-7,1,5,20,mats.wall,false);
+box(-19.5,2.5,-7,1,5,20,mats.wall,false);
+visualBox(-15,5.55,-7,9.6,.38,20.5,mats.trim);
+visualBox(-15,5.78,-7,9.1,.12,19.8,mats.dark);
+visualBox(10.5,5.1,-7,1.2,.28,20.2,mats.trim);
+visualBox(19.5,5.1,-7,1.2,.28,20.2,mats.trim);
+
+// Desert buildings framing the Mid approach
+box(-7.5,2.5,-14,2.4,5,5,mats.wall,false);
+box(7.5,2.5,-14,2.4,5,5,mats.wall,false);
+visualBox(-7.5,5.12,-14,2.65,.25,5.25,mats.trim);
+visualBox(7.5,5.12,-14,2.65,.25,5.25,mats.trim);
+
+// Short/catwalk approaches to the A and B sides
+box(-8,2.3,7,1.2,4.6,4,mats.wall,false);
+box(-8,2.3,16,1.2,4.6,6,mats.wall,false);
+box(8,2.3,7,1.2,4.6,4,mats.wall,false);
+box(8,2.3,16,1.2,4.6,6,mats.wall,false);
+visualBox(-8,4.75,7,1.5,.28,4.25,mats.trim);
+visualBox(8,4.75,7,1.5,.28,4.25,mats.trim);
+
+// Rear site walls leave the central CT approach open
+box(-15,2.3,20,14,4.6,1.2,mats.wall,false);
+box(15,2.3,20,14,4.6,1.2,mats.wall,false);
+makeSiteMarker('A',15,10,0xd9a34d);
+makeSiteMarker('B',-15,10,0x79a6be);
+
+// Recognizable cover positions: long corner, mid boxes, tunnel crates and site cover
+crate(15,-11,1.35);crate(13,-4,1.3);crate(-15,-11,1.35);crate(-13,-4,1.3);
+crate(0,-6,1.45);crate(-2,0,1.2);crate(2,0,1.2);
+crate(13,8,1.55);crate(18,12,1.55);crate(11,15,1.35);crate(18,6,1.2);
+crate(-13,8,1.55);crate(-18,12,1.55);crate(-11,15,1.35);crate(-18,6,1.2);
+barrel(6,14);barrel(-6,14);barrel(6,-16);barrel(-6,-16);
+
+// Lamps and simple facade details around the tunnels and doors
+for(const z of [-14,-7]){
+ const lamp=new THREE.Mesh(new THREE.SphereGeometry(.12,10,8),new THREE.MeshStandardMaterial({color:0xffd38a,emissive:0xffa83b,emissiveIntensity:1.4}));
+ lamp.position.set(-15,4.65,z);scene.add(lamp);
+ const light=new THREE.PointLight(0xffc46e,.65,7,2);light.position.copy(lamp.position);scene.add(light);
+}
+for(const x of [-5.5,5.5]){
+ for(const z of [-15,-10,-5]){
+  visualBox(x,3.25,z,.045,.75,1.25,mats.dark);
+  visualBox(x+(x<0?.045:-.045),3.25,z,.035,.58,1.04,mats.trim);
+ }
+}
 const gridSize=2,navNodes=[],navLookup=new Map(),navNeighbors=new Map();
 for(let x=-22;x<=22;x+=gridSize)for(let z=-22;z<=22;z+=gridSize){if(!blocked(x,z,.45)){const n=new THREE.Vector3(x,0,z);navNodes.push(n);navLookup.set(x+','+z,n);}}
 for(const n of navNodes){const list=[];for(const [dx,dz] of [[2,0],[-2,0],[0,2],[0,-2]]){const q=navLookup.get((n.x+dx)+','+(n.z+dz));if(q)list.push(q);}navNeighbors.set(n,list);}
@@ -230,7 +344,7 @@ function makeActor(team,pos,isPlayer=false){const root=new THREE.Group();root.po
 const actors=[];let player=null,kills=0,gameStarted=false;
 function respawn(a){if(a)a.respawn();}
 const spawnBot=(team,pos)=>makeActor(team,new THREE.Vector3(pos[0],0,pos[1]));
-player=makeActor(0,new THREE.Vector3(0,0,18),true);
+player=makeActor(0,new THREE.Vector3(0,0,20),true);
 const firstPersonWeapon=buildFirstPersonWeapon();
 let weaponScene=null;
 function attachRifle(actor){
@@ -277,8 +391,8 @@ function loadWeaponModel(){
  // поэтому KTX2Loader и сетевой запрос не требуются.
  firstPersonWeapon.gun.visible=true;
 }
-for(let i=0;i<4;i++)spawnBot(1,[[ -16,-15],[15,-15],[-15,14],[15,14]][i]);
-for(let i=0;i<3;i++)spawnBot(0,[[-16,15],[16,15],[0,-19]][i]);
+for(let i=0;i<4;i++)spawnBot(1,[[-3,-20],[3,-20],[-5,-17],[5,-17]][i]);
+for(let i=0;i<3;i++)spawnBot(0,[[-4,20],[4,20],[-6,16]][i]);
 let modelsReady=false,animationsReady=false,soundsReady=false,rendererReady=false;
 const startButton=document.querySelector('#start');
 function setLoadingProgress(progress,message){
