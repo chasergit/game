@@ -248,31 +248,63 @@ function pathAStar(start,end,extraCost=()=>0){const s=nearestNode(start),g=neare
 function visible(a,b){const from=a.clone().add(new THREE.Vector3(0,1.35,0)),to=b.clone().add(new THREE.Vector3(0,1.2,0)),dir=to.clone().sub(from),len=dir.length();dir.normalize();const ray=new THREE.Raycaster(from,dir,0,len);const hits=ray.intersectObjects(obstacles.map(o=>o.mesh),false);return !hits.length;}
 const audioCtx=window.AudioContext?new AudioContext():null;
 const soundBuffers=Object.create(null);
-const soundUrls={shot:['./audio/rifle_556.mp3','./audio/rifle_762.mp3','./audio/smg_9mm.mp3'],distant:'./audio/suppressed.mp3',reload:null,hit:'./audio/pistol_9mm.mp3'};
-const soundPool={shot:[],distant:null,reload:null,hit:null};
+const soundUrls={
+ shot:['./audio/rifle_556.mp3','./audio/rifle_762.mp3','./audio/smg_9mm.mp3'],
+ distant:'./audio/suppressed.mp3',
+ reload:null,
+ hit:'./audio/pistol_9mm.mp3'
+};
 async function loadSoundFiles(onProgress=()=>{}){
- const urls=['./audio/rifle_556.mp3','./audio/rifle_762.mp3','./audio/smg_9mm.mp3','./audio/suppressed.mp3','./audio/pistol_9mm.mp3'];
+ if(!audioCtx)throw new Error('Web Audio API не поддерживается браузером');
+ const entries=Object.entries(soundUrls).filter(([,urls])=>urls);
  let completed=0;
- const loaded=await Promise.all(urls.map(url=>new Promise((resolve,reject)=>{
-  const audio=new Audio();audio.preload='auto';audio.volume=1;
-  const cleanup=()=>{audio.removeEventListener('canplaythrough',onReady);audio.removeEventListener('error',onError);};
-  const onReady=()=>{cleanup();completed++;onProgress(completed/urls.length,completed,urls.length);resolve(audio);};
-  const onError=()=>{cleanup();reject(new Error('Не удалось загрузить звук '+url));};
-  audio.addEventListener('canplaythrough',onReady,{once:true});audio.addEventListener('error',onError,{once:true});
-  audio.src=url;audio.load();if(audio.readyState>=4)onReady();
- })));
- soundPool.shot=loaded.slice(0,3);soundPool.distant=loaded[3];soundPool.reload=null;soundPool.hit=loaded[4];
+ const decodeLocalAudio=async url=>{
+  const response=await fetch(url);
+  if(!response.ok)throw new Error('Не удалось загрузить звук '+url+' ('+response.status+')');
+  const encoded=await response.arrayBuffer();
+  return await audioCtx.decodeAudioData(encoded);
+ };
+ await Promise.all(entries.map(async([name,urls])=>{
+  soundBuffers[name]=Array.isArray(urls)
+   ?await Promise.all(urls.map(decodeLocalAudio))
+   :await decodeLocalAudio(urls);
+  completed++;onProgress(completed/entries.length,completed,entries.length);
+ }));
 }
-
-function playWorldAudio(base,pos,baseVolume=.8){if(!base)return;const a=base.cloneNode();const d=pos?camera.position.distanceTo(pos):0;a.volume=THREE.MathUtils.clamp(baseVolume/(1+d*.095),.018,baseVolume);a.playbackRate=.96+Math.random()*.08;a.play().catch(()=>{});}
-function playShot(pos){const d=pos?camera.position.distanceTo(pos):0;const list=d>25&&soundPool.distant?[soundPool.distant]:soundPool.shot;if(!list?.length)return;const base=list[Math.floor(Math.random()*list.length)];playWorldAudio(base,pos,d>25?.72:.9);}
+function playWorldAudio(buffer,pos,baseVolume=.8){
+ if(!audioCtx||!buffer)return;
+ const source=audioCtx.createBufferSource(),gain=audioCtx.createGain();
+ source.buffer=buffer;
+ source.playbackRate.value=.96+Math.random()*.08;
+ const distance=pos?camera.position.distanceTo(pos):0;
+ gain.gain.value=THREE.MathUtils.clamp(baseVolume/(1+distance*.095),.018,baseVolume);
+ source.connect(gain);
+ let panner=null;
+ if(pos){
+  panner=audioCtx.createPanner();
+  panner.panningModel='HRTF';panner.distanceModel='inverse';
+  panner.refDistance=2;panner.maxDistance=65;panner.rolloffFactor=1.15;
+  panner.positionX.value=pos.x;panner.positionY.value=pos.y;panner.positionZ.value=pos.z;
+  gain.connect(panner);panner.connect(audioCtx.destination);
+ }else gain.connect(audioCtx.destination);
+ source.onended=()=>{source.disconnect();gain.disconnect();panner?.disconnect();};
+ source.start();
+}
+function playShot(pos){
+ const distance=pos?camera.position.distanceTo(pos):0;
+ const far=distance>25&&soundBuffers.distant;
+ const list=far?[far]:soundBuffers.shot;
+ if(!list?.length)return;
+ const buffer=list[Math.floor(Math.random()*list.length)];
+ playWorldAudio(buffer,pos,distance>25?.72:.9);
+}
 
 function playSfx(name,pos=null){const buffer=soundBuffers[name];if(!audioCtx||!buffer)return false;const src=audioCtx.createBufferSource(),gain=audioCtx.createGain();src.buffer=buffer;gain.gain.value=.85;src.connect(gain);if(pos){const p=audioCtx.createPanner();p.panningModel='HRTF';p.distanceModel='inverse';p.refDistance=2;p.maxDistance=42;p.positionX.value=pos.x;p.positionY.value=pos.y;p.positionZ.value=pos.z;gain.connect(p);p.connect(audioCtx.destination);}else gain.connect(audioCtx.destination);src.start();return true;}
 function tone(freq,duration,type='sawtooth',volume=.08,at=null){if(!audioCtx)return;const now=audioCtx.currentTime,osc=audioCtx.createOscillator(),gain=audioCtx.createGain();osc.type=type;osc.frequency.setValueAtTime(freq,now);osc.frequency.exponentialRampToValueAtTime(Math.max(35,freq*.48),now+duration);gain.gain.setValueAtTime(volume,now);gain.gain.exponentialRampToValueAtTime(.001,now+duration);let node=gain;if(at){const p=audioCtx.createPanner();p.panningModel='HRTF';p.distanceModel='inverse';p.refDistance=2;p.maxDistance=40;p.positionX.value=at.x;p.positionY.value=at.y;p.positionZ.value=at.z;gain.connect(p);p.connect(audioCtx.destination);}else gain.connect(audioCtx.destination);osc.connect(gain);osc.start(now);osc.stop(now+duration);}
 function spatialConnect(node,pos){if(pos){const p=audioCtx.createPanner();p.panningModel='HRTF';p.distanceModel='inverse';p.refDistance=2;p.maxDistance=65;p.rolloffFactor=1.15;p.positionX.value=pos.x;p.positionY.value=pos.y;p.positionZ.value=pos.z;node.connect(p);p.connect(audioCtx.destination);}else node.connect(audioCtx.destination);}
 function shotSound(pos){playShot(pos);}
-function reloadSound(pos=null){playWorldAudio(soundPool.reload,pos,.72);}
-function hitSound(pos=null){playWorldAudio(soundPool.hit,pos,.48);}
+function reloadSound(pos=null){playWorldAudio(soundBuffers.reload,pos,.72);}
+function hitSound(pos=null){playWorldAudio(soundBuffers.hit,pos,.48);}
 const audioListener=new THREE.AudioListener();camera.add(audioListener);
 function buildFirstPersonWeapon(){
  const rig=new THREE.Group(),gun=new THREE.Group();rig.add(gun);camera.add(rig);
@@ -357,6 +389,16 @@ function makeFallbackSoldier(team){
  // Rifle is attached once by attachRifle() after the soldier model is ready.
  return g;
 }
+function findRigBone(root,suffix){
+ const target=String(suffix).toLowerCase().replace(/[^a-z0-9]/g,'');
+ let found=null;
+ root?.traverse(o=>{
+  if(found||!o.isBone||!o.name)return;
+  const normalized=o.name.toLowerCase().replace(/[^a-z0-9]/g,'');
+  if(normalized.endsWith(target))found=o;
+ });
+ return found;
+}
 function makeActor(team,pos,isPlayer=false){const root=new THREE.Group();root.position.copy(pos);scene.add(root);const tint=team===0?mats.blue:mats.red;let model=null,mixer=null,actions={},current=null,torsoBones=[],torsoYaw=0;const torsoYawAxis=new THREE.Vector3(0,1,0),torsoYawQuaternion=new THREE.Quaternion(),torsoParentWorldQuaternion=new THREE.Quaternion(),torsoLocalQuaternion=new THREE.Quaternion();let dead=false,hitUntil=0,hitAnimation='hit',deathAnimation='death',health=MAX_HEALTH,fireAt=0,reloadAt=0,ammo=30,heard=null,heardAt=0,target=null,state='roam',goal=null,path=[],pathIndex=0,thinkAt=0,strafeAt=0,strafe=1,flank=false,skill=.88+Math.random()*.24,lastSeen=null,spawn=pos.clone();const marker=new THREE.Mesh(new THREE.CircleGeometry(.55,24),new THREE.MeshBasicMaterial({color:team===0?0x54a8ff:0xff5d4d,transparent:true,opacity:.22,side:THREE.DoubleSide}));marker.rotation.x=-Math.PI/2;marker.position.y=.025;root.add(marker);
  let healthBar=null,healthBarCanvas=null,healthBarTexture=null;
  if(!isPlayer){
@@ -385,10 +427,10 @@ function makeActor(team,pos,isPlayer=false){const root=new THREE.Group();root.po
  function chooseDeathAnimation(attacker){const side=incomingHitSide(attacker);return side==='back'?'deathBack':side==='right'?'deathRight':'death';}
  function setAnim(name,options={}){if(!mixer||!actions[name]){console.warn('Animation is not bound:',name);return false;}if(current===name&&!options.force)return true;const next=actions[name];mixer.stopAllAction();next.reset();next.enabled=true;next.paused=false;next.setEffectiveWeight(1);next.setEffectiveTimeScale(1);next.setLoop(options.once?THREE.LoopOnce:THREE.LoopRepeat,options.once?1:Infinity);next.clampWhenFinished=!!options.once;next.play();current=name;return true;}
  actor.setAnim=setAnim;
- actor.validateAnimations=()=>{const required=['idle','walk','run','hit','death'];const missing=required.filter(name=>!actions[name]||!actions[name].getClip()?.tracks?.length);const bones=new Set();model?.traverse(o=>{if(o.isBone&&o.name)bones.add(o.name);});const expected=['mixamorig:Hips','mixamorig:Spine','mixamorig:LeftArm','mixamorig:RightArm'];const missingBones=expected.filter(name=>!bones.has(name));return {ok:!!mixer&&missing.length===0,missing,missingBones,boneCount:bones.size,actionCount:Object.keys(actions).length};};
+ actor.validateAnimations=()=>{const required=['idle','walk','run','hit','death'];const missing=required.filter(name=>!actions[name]||!actions[name].getClip()?.tracks?.length);let boneCount=0;model?.traverse(o=>{if(o.isBone)boneCount++;});const expected=['hips','spine','leftarm','rightarm'];const missingBones=expected.filter(name=>!findRigBone(model,name));return {ok:!!mixer&&missing.length===0,missing,missingBones,boneCount,actionCount:Object.keys(actions).length};};
  actor.modelReadyFallback=()=>{if(model)return;model=makeFallbackSoldier(team);model.visible=!isPlayer;root.add(model);};
  actor.modelReady=async()=>{if(!soldierScene){actor.modelReadyFallback();return false;}const oldModel=model;const loaded=cloneSkeleton(soldierScene);loaded.visible=!isPlayer;loaded.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;if(o.material){o.material=o.material.clone();if(!isPlayer)o.material.color?.multiply(team===0?new THREE.Color(0x9bb9d8):new THREE.Color(0xd39a8c));}}});loaded.updateMatrixWorld(true);const bounds=new THREE.Box3().setFromObject(loaded),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3());const height=Number.isFinite(size.y)&&size.y>.05?size.y:1.78;const scale=THREE.MathUtils.clamp(1.72/height,.0005,20);loaded.scale.setScalar(scale);loaded.rotation.y=Math.PI;loaded.position.set(-center.x*scale,-bounds.min.y*scale,-center.z*scale);loaded.updateMatrixWorld(true);if(oldModel)root.remove(oldModel);model=loaded;actor.model=model;root.add(model);mixer=new THREE.AnimationMixer(model);actor.bindAnimations();return true;};
- actor.bindAnimations=()=>{if(!mixer)return;for(const [k,c] of Object.entries(clips)){if(actions[k])continue;try{actions[k]=mixer.clipAction(c);}catch(error){console.error('Не удалось привязать анимацию '+k,error);}}torsoBones=[{bone:model.getObjectByName('mixamorig:Spine'),weight:.2},{bone:model.getObjectByName('mixamorig:Spine1'),weight:.35},{bone:model.getObjectByName('mixamorig:Spine2'),weight:.45}].filter(entry=>entry.bone);if(dead)setAnim(deathAnimation,{once:true,force:true});else if(hitUntil>performance.now()/1000)setAnim(actions[hitAnimation]?hitAnimation:'hit',{once:true,force:true});else if(actions.idle)setAnim('idle',{force:true});};
+ actor.bindAnimations=()=>{if(!mixer)return;for(const [k,c] of Object.entries(clips)){if(actions[k])continue;try{actions[k]=mixer.clipAction(c);}catch(error){console.error('Не удалось привязать анимацию '+k,error);}}torsoBones=[{bone:findRigBone(model,'spine'),weight:.2},{bone:findRigBone(model,'spine1'),weight:.35},{bone:findRigBone(model,'spine2'),weight:.45}].filter(entry=>entry.bone);if(dead)setAnim(deathAnimation,{once:true,force:true});else if(hitUntil>performance.now()/1000)setAnim(actions[hitAnimation]?hitAnimation:'hit',{once:true,force:true});else if(actions.idle)setAnim('idle',{force:true});};
  actor.updateAnim=dt=>{if(mixer)mixer.update(dt);if(dead)return;let desiredTorsoYaw=0;const aimTarget=actor.target;if(aimTarget?.root&&!aimTarget.dead){const toward=aimTarget.root.position.clone().sub(root.position);toward.y=0;if(toward.lengthSq()>.001){const aimYaw=Math.atan2(-toward.x,-toward.z),delta=Math.atan2(Math.sin(aimYaw-root.rotation.y),Math.cos(aimYaw-root.rotation.y));desiredTorsoYaw=THREE.MathUtils.clamp(delta,-1.42,1.42);}}torsoYaw=THREE.MathUtils.damp(torsoYaw,desiredTorsoYaw,12,dt);for(const entry of torsoBones){const parent=entry.bone.parent;if(!parent)continue;torsoYawQuaternion.setFromAxisAngle(torsoYawAxis,torsoYaw*entry.weight);parent.updateWorldMatrix(true,false);parent.getWorldQuaternion(torsoParentWorldQuaternion);torsoLocalQuaternion.copy(torsoParentWorldQuaternion).invert().multiply(torsoYawQuaternion).multiply(torsoParentWorldQuaternion);entry.bone.quaternion.premultiply(torsoLocalQuaternion);entry.bone.updateWorldMatrix(false,true);}if(performance.now()/1000<hitUntil)return;const speed=actor.velocity?.length()||0;const desired=state==='reload'?'reload':actor.crouched?(speed>.25?'crouchWalk':'crouch'):speed>4.8?'run':speed>.3?'walk':'idle';if(current!==desired)setAnim(desired);};
  actor.velocity=new THREE.Vector3();actor.crouched=false;
  if(isPlayer){actor.move=(dt)=>{};}
