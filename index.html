@@ -70,35 +70,20 @@ const loader=new GLTFLoader(),clock=new THREE.Clock();
 
  // One GPU draw call batches every muzzle flash and spark in the scene.
  const MAX_SHOT_SPARKS=512;
- const shotSparkCanvas=document.createElement('canvas');shotSparkCanvas.width=shotSparkCanvas.height=128;
- const sparkCtx=shotSparkCanvas.getContext('2d');
- sparkCtx.translate(64,64);
- const sparkGlow=sparkCtx.createRadialGradient(0,0,1,0,0,62);
- sparkGlow.addColorStop(0,'rgba(255,255,255,1)');
- sparkGlow.addColorStop(.12,'rgba(255,249,205,.98)');
- sparkGlow.addColorStop(.3,'rgba(255,190,75,.88)');
- sparkGlow.addColorStop(.58,'rgba(255,105,24,.38)');
- sparkGlow.addColorStop(1,'rgba(255,70,12,0)');
- sparkCtx.fillStyle=sparkGlow;sparkCtx.fillRect(-64,-64,128,128);
- for(let i=0;i<14;i++){
-  sparkCtx.save();sparkCtx.rotate(i*Math.PI*2/14);
-  const length=25+(i%4)*8;
-  const ray=sparkCtx.createLinearGradient(0,0,0,-length);
-  ray.addColorStop(0,'rgba(255,255,235,.98)');
-  ray.addColorStop(.22,'rgba(255,220,132,.9)');
-  ray.addColorStop(1,'rgba(255,115,28,0)');
-  sparkCtx.fillStyle=ray;sparkCtx.beginPath();
-  sparkCtx.moveTo(-4,5);sparkCtx.quadraticCurveTo(-1,-length*.42,-.8,-length);
-  sparkCtx.quadraticCurveTo(1,-length*.72,4,5);sparkCtx.closePath();sparkCtx.fill();
-  sparkCtx.restore();
- }
- const shotSparkTexture=new THREE.CanvasTexture(shotSparkCanvas);
- shotSparkTexture.colorSpace=THREE.SRGBColorSpace;shotSparkTexture.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+ let shotSparkTexture=null;
  const shotSparkMaterial=new THREE.MeshBasicMaterial({
-  map:shotSparkTexture,transparent:true,opacity:1,vertexColors:true,
+  map:null,transparent:true,opacity:1,vertexColors:true,
   blending:THREE.AdditiveBlending,depthWrite:false,depthTest:false,
   side:THREE.DoubleSide,toneMapped:false
  });
+ async function loadShotSparkTexture(){
+  if(shotSparkTexture)return;
+  shotSparkTexture=await new THREE.TextureLoader().loadAsync('./effects/muzzle_flash.png');
+  shotSparkTexture.colorSpace=THREE.SRGBColorSpace;
+  shotSparkTexture.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+  shotSparkMaterial.map=shotSparkTexture;
+  shotSparkMaterial.needsUpdate=true;
+ }
  const shotSparkBatch=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),shotSparkMaterial,MAX_SHOT_SPARKS);
  shotSparkBatch.name='InstancedShotSparks.SingleDrawCall';shotSparkBatch.count=0;
  shotSparkBatch.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(MAX_SHOT_SPARKS*3),3);
@@ -467,7 +452,7 @@ function loadWeaponModel(){
 }
 for(let i=0;i<4;i++)spawnBot(1,[[-3,-20],[3,-20],[-4,-18],[4,-18]][i]);
 for(let i=0;i<3;i++)spawnBot(0,[[-4,20],[4,20],[-6,16]][i]);
-let modelsReady=false,animationsReady=false,soundsReady=false,rendererReady=false;
+let modelsReady=false,animationsReady=false,soundsReady=false,sparkTextureReady=false,rendererReady=false;
 const startButton=document.querySelector('#start');
 function setLoadingProgress(progress,message){
  document.querySelector('#load-status').textContent=message;
@@ -498,13 +483,18 @@ async function initializeGameAssets(){
    await loadSoundFiles((ratio,done,total)=>setLoadingProgress(.75+ratio*.18,'Загрузка звуков: '+done+'/'+total));
    soundsReady=true;
   }
+  if(!sparkTextureReady){
+   setLoadingProgress(.93,'Загрузка текстуры вспышки выстрела...');
+   await loadShotSparkTexture();
+   sparkTextureReady=true;
+  }
   if(!rendererReady){
-   setLoadingProgress(.95,'Подготовка графики...');
+   setLoadingProgress(.96,'Подготовка графики...');
    playerTick(0);
    if(typeof renderer.compileAsync==='function')await renderer.compileAsync(scene,camera);else renderer.compile(scene,camera);
    renderer.render(scene,camera);rendererReady=true;
   }
-  assetsReady=modelsReady&&animationsReady&&soundsReady&&rendererReady;
+  assetsReady=modelsReady&&animationsReady&&soundsReady&&sparkTextureReady&&rendererReady;
   if(!assetsReady)throw new Error('Не все игровые ресурсы готовы');
   setLoadingProgress(1,'Все ресурсы загружены. Игра готова к запуску.');
   startButton.disabled=false;startButton.textContent='НАЧАТЬ БОЙ';
