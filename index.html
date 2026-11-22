@@ -146,7 +146,7 @@ function makeFallbackSoldier(team){
  // Rifle is attached once by attachRifle() after the soldier model is ready.
  return g;
 }
-function makeActor(team,pos,isPlayer=false){const root=new THREE.Group();root.position.copy(pos);scene.add(root);const tint=team===0?mats.blue:mats.red;let model=null,mixer=null,actions={},current='idle',dead=false,health=100,fireAt=0,reloadAt=0,ammo=30,heard=null,heardAt=0,target=null,state='roam',goal=null,path=[],pathIndex=0,thinkAt=0,strafeAt=0,strafe=1,flank=false,skill=.88+Math.random()*.24,lastSeen=null,spawn=pos.clone();const marker=new THREE.Mesh(new THREE.CircleGeometry(.55,24),new THREE.MeshBasicMaterial({color:team===0?0x54a8ff:0xff5d4d,transparent:true,opacity:.22,side:THREE.DoubleSide}));marker.rotation.x=-Math.PI/2;marker.position.y=.025;root.add(marker);
+function makeActor(team,pos,isPlayer=false){const root=new THREE.Group();root.position.copy(pos);scene.add(root);const tint=team===0?mats.blue:mats.red;let model=null,mixer=null,actions={},current=null,dead=false,health=100,fireAt=0,reloadAt=0,ammo=30,heard=null,heardAt=0,target=null,state='roam',goal=null,path=[],pathIndex=0,thinkAt=0,strafeAt=0,strafe=1,flank=false,skill=.88+Math.random()*.24,lastSeen=null,spawn=pos.clone();const marker=new THREE.Mesh(new THREE.CircleGeometry(.55,24),new THREE.MeshBasicMaterial({color:team===0?0x54a8ff:0xff5d4d,transparent:true,opacity:.22,side:THREE.DoubleSide}));marker.rotation.x=-Math.PI/2;marker.position.y=.025;root.add(marker);
  const actor={root,team,isPlayer,thinkAt:0,goal:null,path:[],pathIndex:0,strafeAt:0,strafe:1,lastSeen:null,target:null,reloadAt:0,hitboxes:[],get health(){return health},get dead(){return dead},get state(){return state},set state(v){state=v},get ammo(){return ammo},set ammo(v){ammo=v},get fireAt(){return fireAt},set fireAt(v){fireAt=v},get heard(){return heard},set heard(v){heard=v},get heardAt(){return heardAt},set heardAt(v){heardAt=v},get skill(){return skill},setTarget(t){target=t;},respawn(){dead=false;health=100;target=null;heard=null;state='roam';root.position.copy(spawn);actor.velocity.set(0,0,0);if(actions.idle)setAnim('idle');},takeDamage(d,attacker){if(dead)return;health-=d;hitSound(root.position);if(health<=0){dead=true;state='dead';setAnim('death');tone(80,.35,'triangle',.12,root.position);if(attacker?.isPlayer){kills++;document.querySelector('#score').textContent='УБИЙСТВА '+kills;}setTimeout(()=>respawn(actor),5500);}else{setAnim('hit');setTimeout(()=>{if(!dead)setAnim('idle');},380);if(attacker&&attacker.team!==team){heard=attacker.root.position.clone();heardAt=performance.now()/1000;}}},};
  actors.push(actor);
  // Hidden, non-rendering hit volumes: head, chest, abdomen, pelvis and legs.
@@ -171,15 +171,20 @@ function attachRifle(actor){
   if(actor.isPlayer||!firstPersonWeapon?.gun)return;
   const old=actor.root.getObjectByName('carried-rifle');if(old)old.parent?.remove(old);
   const rifle=firstPersonWeapon.gun.clone(true);rifle.name='carried-rifle';rifle.scale.setScalar(.62);
-  rifle.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=true;}});
+  rifle.visible=true;rifle.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;o.visible=true;}});
   const model=actor.model;
   const bones=[];model?.traverse(o=>{if(o.isBone)bones.push(o);});
   const findBone=patterns=>bones.find(b=>patterns.some(p=>p.test(b.name)));
   const right=findBone([/right.?hand/i,/hand.?r(ight)?$/i,/mixamorig:right.?hand/i]);
   const left=findBone([/left.?hand/i,/hand.?l(eft)?$/i,/mixamorig:left.?hand/i]);
   if(model&&right&&left){
-    const modelScale=Math.max(.0001,Math.abs(model.scale.x));
-    rifle.scale.setScalar(.62/modelScale);
+    // soldier.glb has an internal Armature scale of 0.01; compensate using the full hand-bone world scale.
+    const handWorldScale=right.getWorldScale(new THREE.Vector3());
+    rifle.scale.set(
+      .62/Math.max(.00001,Math.abs(handWorldScale.x)),
+      .62/Math.max(.00001,Math.abs(handWorldScale.y)),
+      .62/Math.max(.00001,Math.abs(handWorldScale.z))
+    );
     model.updateMatrixWorld(true);
     const rWorld=right.getWorldPosition(new THREE.Vector3());
     const lWorld=left.getWorldPosition(new THREE.Vector3());
@@ -188,7 +193,7 @@ function attachRifle(actor){
     const axis=l.clone().sub(r).normalize();
     const modelRotation=model.getWorldQuaternion(new THREE.Quaternion());
     const localRotation=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,-1),axis);
-    const desiredWorldPosition=model.localToWorld(r.clone().addScaledVector(axis,.16*.62/modelScale));
+    const desiredWorldPosition=model.localToWorld(r.clone().addScaledVector(axis,.16*.62/Math.max(.0001,Math.abs(model.scale.x))));
     const desiredWorldRotation=modelRotation.clone().multiply(localRotation);
     const rightWorldRotation=right.getWorldQuaternion(new THREE.Quaternion());
     rifle.position.copy(right.worldToLocal(desiredWorldPosition.clone()));
