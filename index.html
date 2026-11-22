@@ -90,11 +90,11 @@ async function loadSoundFiles(onProgress=()=>{}){
  let completed=0;
  const loaded=await Promise.all(urls.map(url=>new Promise((resolve,reject)=>{
   const audio=new Audio();audio.preload='auto';audio.volume=1;
-  const cleanup=()=>{audio.removeEventListener('loadeddata',onReady);audio.removeEventListener('error',onError);};
+  const cleanup=()=>{audio.removeEventListener('canplaythrough',onReady);audio.removeEventListener('error',onError);};
   const onReady=()=>{cleanup();completed++;onProgress(completed/urls.length,completed,urls.length);resolve(audio);};
   const onError=()=>{cleanup();reject(new Error('Не удалось загрузить звук '+url));};
-  audio.addEventListener('loadeddata',onReady,{once:true});audio.addEventListener('error',onError,{once:true});
-  audio.src=url;audio.load();if(audio.readyState>=2)onReady();
+  audio.addEventListener('canplaythrough',onReady,{once:true});audio.addEventListener('error',onError,{once:true});
+  audio.src=url;audio.load();if(audio.readyState>=4)onReady();
  })));
  soundPool.shot=loaded.slice(0,3);soundPool.distant=loaded[3];soundPool.reload=null;soundPool.hit=loaded[4];
 }
