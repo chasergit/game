@@ -67,6 +67,71 @@ const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,150);scene
 const hemi=new THREE.HemisphereLight(0xffedcf,0x766047,2.25);scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xffe3b1,2.55);sun.position.set(-16,28,-10);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-45;sun.shadow.camera.right=45;sun.shadow.camera.top=45;sun.shadow.camera.bottom=-45;scene.add(sun);
 const loader=new GLTFLoader(),clock=new THREE.Clock();
+
+ // One GPU draw call batches every muzzle flash and spark in the scene.
+ const MAX_SHOT_SPARKS=512;
+ const shotSparkCanvas=document.createElement('canvas');shotSparkCanvas.width=shotSparkCanvas.height=128;
+ const sparkCtx=shotSparkCanvas.getContext('2d');
+ sparkCtx.translate(64,64);
+ const sparkGlow=sparkCtx.createRadialGradient(0,0,1,0,0,62);
+ sparkGlow.addColorStop(0,'rgba(255,255,255,1)');
+ sparkGlow.addColorStop(.12,'rgba(255,249,205,.98)');
+ sparkGlow.addColorStop(.3,'rgba(255,190,75,.88)');
+ sparkGlow.addColorStop(.58,'rgba(255,105,24,.38)');
+ sparkGlow.addColorStop(1,'rgba(255,70,12,0)');
+ sparkCtx.fillStyle=sparkGlow;sparkCtx.fillRect(-64,-64,128,128);
+ for(let i=0;i<14;i++){
+  sparkCtx.save();sparkCtx.rotate(i*Math.PI*2/14);
+  const length=25+(i%4)*8;
+  const ray=sparkCtx.createLinearGradient(0,0,0,-length);
+  ray.addColorStop(0,'rgba(255,255,235,.98)');
+  ray.addColorStop(.22,'rgba(255,220,132,.9)');
+  ray.addColorStop(1,'rgba(255,115,28,0)');
+  sparkCtx.fillStyle=ray;sparkCtx.beginPath();
+  sparkCtx.moveTo(-4,5);sparkCtx.quadraticCurveTo(-1,-length*.42,-.8,-length);
+  sparkCtx.quadraticCurveTo(1,-length*.72,4,5);sparkCtx.closePath();sparkCtx.fill();
+  sparkCtx.restore();
+ }
+ const shotSparkTexture=new THREE.CanvasTexture(shotSparkCanvas);
+ shotSparkTexture.colorSpace=THREE.SRGBColorSpace;shotSparkTexture.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+ const shotSparkMaterial=new THREE.MeshBasicMaterial({
+  map:shotSparkTexture,transparent:true,opacity:1,vertexColors:true,
+  blending:THREE.AdditiveBlending,depthWrite:false,depthTest:true,
+  side:THREE.DoubleSide,toneMapped:false
+ });
+ const shotSparkBatch=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),shotSparkMaterial,MAX_SHOT_SPARKS);
+ shotSparkBatch.name='InstancedShotSparks.SingleDrawCall';shotSparkBatch.count=0;
+ shotSparkBatch.frustumCulled=false;shotSparkBatch.renderOrder=12;scene.add(shotSparkBatch);
+ const shotSparks=[];
+ const shotSparkDummy=new THREE.Object3D();
+ const shotSparkColor=new THREE.Color();
+ const shotSparkDrag=5.5;
+ function addShotSpark(position,velocity,life,width,height,color,rotation=0,spin=0){
+  if(shotSparks.length>=MAX_SHOT_SPARKS)shotSparks.shift();
+  shotSparks.push({position:position.clone(),velocity,life,age:0,width,height,color,rotation,spin});
+ }
+ function updateShotSparks(dt){
+  let instance=0;
+  for(let i=shotSparks.length-1;i>=0;i--){
+   const p=shotSparks[i];p.age+=dt;
+   if(p.age>=p.life){shotSparks.splice(i,1);continue;}
+   p.position.addScaledVector(p.velocity,dt);
+   p.velocity.multiplyScalar(Math.exp(-shotSparkDrag*dt));
+   const t=p.age/p.life,fade=Math.pow(1-t,1.45);
+   shotSparkDummy.position.copy(p.position);
+   shotSparkDummy.quaternion.copy(camera.quaternion);
+   shotSparkDummy.rotateZ(p.rotation+p.spin*p.age);
+   shotSparkDummy.scale.set(p.width*(1+.35*t),p.height*(1-.28*t),1);
+   shotSparkDummy.updateMatrix();
+   shotSparkBatch.setMatrixAt(instance,shotSparkDummy.matrix);
+   shotSparkColor.setRGB(p.color.r*fade,p.color.g*fade,p.color.b*fade);
+   shotSparkBatch.setColorAt(instance,shotSparkColor);
+   instance++;
+  }
+  shotSparkBatch.count=instance;
+  if(instance){shotSparkBatch.instanceMatrix.needsUpdate=true;if(shotSparkBatch.instanceColor)shotSparkBatch.instanceColor.needsUpdate=true;}
+ }
+
 function makeSurfaceTexture(base,accent,seed=1,repeat=8){
  const canvas=document.createElement('canvas');canvas.width=256;canvas.height=256;
  const ctx=canvas.getContext('2d');ctx.fillStyle=base;ctx.fillRect(0,0,256,256);
@@ -442,7 +507,24 @@ async function initializeGameAssets(){
  }finally{assetsLoading=false;}
 }
 
-function spawnShotEffect(origin,direction,isPlayerShot){const flash=new THREE.Mesh(new THREE.SphereGeometry(.105,8,6),new THREE.MeshBasicMaterial({color:0xffc45a,transparent:true,opacity:.95}));flash.position.copy(origin);flash.position.addScaledVector(direction,.12);flash.scale.set(.8+Math.random()*.7,.8+Math.random()*.7,1.8);scene.add(flash);const light=new THREE.PointLight(0xffa33b,3.2,5,2);light.position.copy(flash.position);scene.add(light);const end=origin.clone().addScaledVector(direction,Math.min(10,isPlayerShot?10:7));const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([origin.clone(),end]),new THREE.LineBasicMaterial({color:0xffdca0,transparent:true,opacity:.7}));scene.add(line);setTimeout(()=>{scene.remove(flash,light,line);flash.geometry.dispose();flash.material.dispose();line.geometry.dispose();line.material.dispose();},65);}
+function spawnShotEffect(origin,direction,isPlayerShot){
+ const forward=direction.clone().normalize(),muzzle=origin.clone().addScaledVector(forward,.12);
+ // The large textured core and all flying fragments share one InstancedMesh.
+ addShotSpark(muzzle,forward.clone().multiplyScalar(.12),.075,isPlayerShot?.64:.48,isPlayerShot?.34:.26,new THREE.Color(1,.82,.48),Math.random()*Math.PI,0);
+ const sparkCount=isPlayerShot?9:7;
+ for(let i=0;i<sparkCount;i++){
+  const spread=new THREE.Vector3((Math.random()-.5)*2.8,(Math.random()-.5)*2.8,(Math.random()-.5)*2.8);
+  const velocity=forward.clone().multiplyScalar(1.2+Math.random()*2.2).add(spread);
+  const warm=Math.random();
+  const tint=warm>.72?new THREE.Color(1,.42,.16):new THREE.Color(1,.68+.25*Math.random(),.38+.28*Math.random());
+  addShotSpark(muzzle,velocity,.085+Math.random()*.095,.12+Math.random()*.16,.025+Math.random()*.035,tint,Math.random()*Math.PI, (Math.random()-.5)*12);
+ }
+ // Keep the bullet tracer separate; muzzle flashes and spark fragments remain one draw call.
+ const end=origin.clone().addScaledVector(direction,Math.min(10,isPlayerShot?10:7));
+ const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([origin.clone(),end]),new THREE.LineBasicMaterial({color:0xffdca0,transparent:true,opacity:.7}));
+ scene.add(line);
+ setTimeout(()=>{scene.remove(line);line.geometry.dispose();line.material.dispose();},65);
+}
 function notice(s){const el=document.querySelector('#notice');el.textContent=s;el.style.opacity=1;clearTimeout(notice.t);notice.t=setTimeout(()=>el.style.opacity=0,1600);}
 const keys={};let yaw=0,pitch=-.12,mouseLocked=false,shooting=false,lastShot=0,mag=30,reserve=120,reloading=false,playerHealth=MAX_HEALTH;
 function lock(){canvas.requestPointerLock?.();}
@@ -473,7 +555,7 @@ function botTick(a,dt,now){if(a.isPlayer)return;if(a.dead){a.updateAnim(dt);retu
  for(const other of actors){if(other===a||other.dead)continue;const delta=pos.clone().sub(other.root.position);delta.y=0;const d=delta.length();if(d>0&&d<1.5)dir.add(delta.normalize().multiplyScalar((1.5-d)*.9));}
  moveActor(a,dir,dt,a.state==='engage'?2.6:a.state==='cover'?4.4:3.7);a.updateAnim(dt);}
 function distanceToSegment(p,a,b){const ab=b.clone().sub(a),t=THREE.MathUtils.clamp(p.clone().sub(a).dot(ab)/Math.max(.001,ab.lengthSq()),0,1);return p.distanceTo(a.clone().addScaledVector(ab,t));}
-function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.05),now=performance.now()/1000;if(gameStarted){playerTick(dt);for(const a of actors){if(!a.isPlayer)botTick(a,dt,now);else a.updateAnim(dt);}document.querySelector('#health').textContent='HP '+Math.max(0,Math.round(player.health));document.querySelector('#botstate').textContent='Боты: '+actors.filter(a=>a.team===1&&!a.dead).length+' противников';}renderer.render(scene,camera);}
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.05),now=performance.now()/1000;if(gameStarted){playerTick(dt);for(const a of actors){if(!a.isPlayer)botTick(a,dt,now);else a.updateAnim(dt);}document.querySelector('#health').textContent='HP '+Math.max(0,Math.round(player.health));document.querySelector('#botstate').textContent='Боты: '+actors.filter(a=>a.team===1&&!a.dead).length+' противников';}updateShotSparks(dt);renderer.render(scene,camera);}
 window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 initializeGameAssets();animate();
 </script>
