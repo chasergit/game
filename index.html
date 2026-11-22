@@ -178,6 +178,7 @@ function attachRifle(actor){
   const right=findBone([/right.?hand/i,/hand.?r(ight)?$/i,/mixamorig:right.?hand/i]);
   const left=findBone([/left.?hand/i,/hand.?l(eft)?$/i,/mixamorig:left.?hand/i]);
   if(model&&right&&left){
+    model.updateMatrixWorld(true);
     // soldier.glb has an internal Armature scale of 0.01; compensate using the full hand-bone world scale.
     const handWorldScale=right.getWorldScale(new THREE.Vector3());
     rifle.scale.set(
@@ -185,7 +186,6 @@ function attachRifle(actor){
       .62/Math.max(.00001,Math.abs(handWorldScale.y)),
       .62/Math.max(.00001,Math.abs(handWorldScale.z))
     );
-    model.updateMatrixWorld(true);
     const rWorld=right.getWorldPosition(new THREE.Vector3());
     const lWorld=left.getWorldPosition(new THREE.Vector3());
     const r=model.worldToLocal(rWorld.clone());
